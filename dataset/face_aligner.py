@@ -66,6 +66,9 @@ class FaceAligner:
         buf_offset_y = int(buf_offset_y * image.shape[0])
 
         extended_size = max(buf_sz_x, buf_sz_y)
+        buf_offset_x += int((extended_size - buf_sz_x) * 0.5)
+        buf_offset_y += int((extended_size - buf_sz_y) * 0.5)
+
         eye_target_dist = self.eye_dist * extended_size
 
         buf = np.zeros(shape=(extended_size, extended_size, 3), dtype=np.uint8)

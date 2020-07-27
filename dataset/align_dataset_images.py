@@ -14,15 +14,17 @@ from dataset.face_aligner import FaceAligner
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_folder", type=str, default="/home/igor/datasets/faces6k/data/images",
+    parser.add_argument("--input_folder", type=str,
+                        default="/home/igor/datasets/align_celeba/img_align_celeba/img_align_celeba",
                         help="Input data folder")
-    parser.add_argument("--output_folder", type=str, default="/home/igor/datasets/faces6k/aligned",
+    parser.add_argument("--output_folder", type=str,
+                        default="/home/igor/datasets/faces",
                         help="Output folder")
-    parser.add_argument("--target_image_size", type=int, default=100,
+    parser.add_argument("--target_image_size", type=int, default=64,
                         help="Size (both w and h) of output aligned images [pix]")
-    parser.add_argument("--eye_level", type=float, default=0.3,
+    parser.add_argument("--eye_level", type=float, default=0.4,
                         help="Hight of eye level (from top), normalized to frame's height")
-    parser.add_argument("--eye_dist", type=float, default=0.5,
+    parser.add_argument("--eye_dist", type=float, default=0.3,
                         help="Distance b"
                              "etween eye, normalized to frame's width")
     args = parser.parse_args()
