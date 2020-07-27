@@ -152,6 +152,9 @@ def parse_args():
                         help="Gaussian noise mean")
     parser.add_argument("--noise-std", type=float,
                         help="Gaussian noise std")
+    parser.add_argument("--dataset", type=str,
+                        default="/home/igor/datasets/faces",
+                        help="Abs path to dataset")
     args = parser.parse_args()
     return args
 
@@ -172,7 +175,7 @@ def main():
     transform = None
     if (args.noise_mean is not None) and (args.noise_std is not None):
         transform = AddGaussianNoise(mean=args.noise_mean, std=args.noise_std)
-    dataset = FacesDataset("/home/igor/datasets/faces6k/aligned", target_size=(64, 64),
+    dataset = FacesDataset(args.dataset, target_size=(64, 64),
                            mean=DEFAULT_RGB_MEAN, std=DEFAULT_RGB_STD, transform=transform)
     train_dloader = make_dataloader(dataset, batch_size=args.batch_train, shuffle_dataset=True)
 

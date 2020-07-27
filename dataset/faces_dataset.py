@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, SubsetRandomSampler
 from dataset.utils import encode_img, decode_img, array_yxc2cyx, array_cyx2yxc
 
 
-DEFAULT_DSET_PATH = "/home/igor/datasets/faces6k/aligned"
+DEFAULT_DSET_PATH = "/home/igor/datasets/faces"
 DEFAULT_TARGET_SIZE = (64, 64)
 DEFAULT_RGB_MEAN = (0.5566640322357532, 0.44162517425904774, 0.3831630928626849)
 DEFAULT_RGB_STD = (0.2790375660010676, 0.2526975687092722, 0.24888596084747636)
