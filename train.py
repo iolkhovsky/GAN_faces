@@ -12,77 +12,62 @@ from metrics import accuracy
 from dataset.utils import decode_img, array_yxc2cyx
 from dataset.faces_dataset import FacesDataset, DEFAULT_RGB_MEAN, DEFAULT_RGB_STD, AddGaussianNoise
 
-from utils import get_readable_timestamp
+from utils import get_readable_timestamp, get_total_elements_cnt
+from loss import discriminator_loss, generator_loss
 
 
-def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr, epoch_id=0, scheduler=None, device="cpu",
-          autosave_period=None, valid_period=None, tb_writer=None, transform=None):
+def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr, epoch_id=0,
+          generator_trains_per_iter=2, scheduler=None, device="cpu", autosave_period=None, valid_period=None,
+          tb_writer=None, transform=None):
 
     with tqdm(total=len(train_loader) * train_loader.batch_size,
               desc=f'Epoch {epoch_id + 1}',
               unit='image') as pbar:
         for batch_idx, real_imgs in enumerate(train_loader):
 
-            generator.train()
-            discriminator.train()
-
             optimizer_discr.zero_grad()
+            optimizer_gen.zero_grad()
             real_imgs = real_imgs.to(device)
-            b_size = real_imgs.size(0)
-            label = torch.full((b_size,), 1, device=device)
-            output = discriminator(real_imgs)
-            loss_function = BCELoss(reduction="mean")
-            errD_real = loss_function(output, label)
-            errD_real.backward()
-            D_x = output.mean().item()
+            random_descriptors = torch.randn(real_imgs.size(0), 100, device=device)
+            generator.eval()
+            fake_imgs = generator.forward(random_descriptors)
 
-            random_descriptors = torch.randn(b_size, 64, device=device)
-            # Generate fake image batch with G
-            fake = generator(random_descriptors)
-            if transform is not None:
-                fake = transform(fake)
-            label.fill_(0)
-            # Classify all fake batch with D
-            output = discriminator(fake.detach())
-            # Calculate D's loss on the all-fake batch
-            errD_fake = loss_function(output, label)
-            # Calculate the gradients for this batch
-            errD_fake.backward()
-            D_G_z1 = output.mean().item()
-            # Add the gradients from the all-real and all-fake batches
-            errD = errD_real + errD_fake
-            # Update D
+            discriminator.train()
+            real_probs = discriminator.forward(real_imgs)
+            fake_probs = discriminator.forward(fake_imgs)
+            d_loss, loss_real, loss_fake = discriminator_loss(real_prob=real_probs, fake_prob=fake_probs)
+            d_loss.backward()
             optimizer_discr.step()
 
-            optimizer_gen.zero_grad()
-            label.fill_(1)  # fake labels are real for generator cost
-            # Since we just updated D, perform another forward pass of all-fake batch through D
-            output = discriminator(fake)
-            # Calculate G's loss based on this output
-            errG = loss_function(output, label)
-            # Calculate gradients for G
-            errG.backward()
-            D_G_z2 = output.mean().item()
-            # Update G
+            generator.train()
+            g_loss = generator_loss(fake_prob=fake_probs)
+            g_loss.backward()
             optimizer_gen.step()
+            for i in range(generator_trains_per_iter - 1):
+                g_loss = generator_loss(fake_prob=fake_probs)
+                g_loss.backward()
+                optimizer_gen.step()
+
+            discr_real_accuracy = torch.sum(torch.where(real_probs >= 0.5, 1, 0)) / get_total_elements_cnt(real_probs)
+            disc_fake_accuracy = torch.sum(torch.where(fake_probs < 0.5, 0, 1)) / get_total_elements_cnt(fake_probs)
 
             global_step = epoch_id * len(train_loader) + batch_idx
             if tb_writer:
-                tb_writer.add_scalar("Loss/Discriminator", errD.item(), global_step)
-                tb_writer.add_scalar("Loss/DiscriminatorFake", errD_fake.item(), global_step)
-                tb_writer.add_scalar("Loss/DiscriminatorReal", errD_real.item(), global_step)
-                tb_writer.add_scalar("Loss/Generator", errG.item(), global_step)
-                tb_writer.add_scalar("Loss/Total", errG.item() + errD.item(), global_step)
-                tb_writer.add_scalar("Accuracy/DiscrReal", D_x, global_step)
-                tb_writer.add_scalar("Accuracy/DiscrFake", 1.0 - D_G_z1, global_step)
-                tb_writer.add_scalar("Accuracy/GenFake", D_G_z2, global_step)
+                tb_writer.add_scalar("Loss/Discriminator", d_loss.item(), global_step)
+                tb_writer.add_scalar("Loss/DiscriminatorFake", loss_fake.item(), global_step)
+                tb_writer.add_scalar("Loss/DiscriminatorReal", loss_real.item(), global_step)
+                tb_writer.add_scalar("Loss/Generator", g_loss.item(), global_step)
+                tb_writer.add_scalar("Loss/Total", d_loss.item() + g_loss.item(), global_step)
+                tb_writer.add_scalar("Accuracy/DiscrReal", discr_real_accuracy.item(), global_step)
+                tb_writer.add_scalar("Accuracy/DiscrFake", disc_fake_accuracy.item(), global_step)
+                tb_writer.add_scalar("Accuracy/GenFake", 1. - disc_fake_accuracy.item(), global_step)
 
             if valid_period:
                 if (batch_idx + 1) % valid_period == 0:
                     with torch.no_grad():
 
                         gen_imgs = []
-                        for i, img in enumerate(fake):
+                        for i, img in enumerate(fake_imgs):
                             if img.device != "cpu":
                                 img = img.cpu()
                             img = decode_img(img.detach().numpy())

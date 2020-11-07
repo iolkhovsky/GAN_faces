@@ -2,28 +2,6 @@ import torch.nn as nn
 from torch.nn.init import kaiming_normal_ as he_normal
 
 
-class ConvX2(nn.Module):
-
-    def __init__(self, channels):
-        super(ConvX2, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels=channels[0], out_channels=channels[1], kernel_size=3, padding=0)
-        self.bn1 = nn.BatchNorm2d(channels[1])
-        self.act1 = nn.ReLU()
-        self.conv2 = nn.Conv2d(in_channels=channels[1], out_channels=channels[2], kernel_size=3, padding=0)
-        self.bn2 = nn.BatchNorm2d(channels[2])
-        self.act2 = nn.ReLU()
-        he_normal(self.conv1.weight)
-        he_normal(self.conv2.weight)
-        return
-
-    def forward(self, x):
-        x = self.conv1(x)
-        x = self.act1(self.bn1(x))
-        x = self.conv2(x)
-        x = self.act2(self.bn2(x))
-        return x
-
-
 class ConvX1(nn.Module):
 
     def __init__(self, channels):
@@ -31,47 +9,29 @@ class ConvX1(nn.Module):
         self.conv = nn.Conv2d(in_channels=channels[0], out_channels=channels[1], kernel_size=3, padding=1, bias=False)
         self.bn = nn.BatchNorm2d(channels[1])
         self.act = nn.LeakyReLU(0.2)
-        # he_normal(self.conv.weight)
-        nn.init.normal_(self.conv.weight.data, 0.0, 0.02)
-        nn.init.normal_(self.bn.weight.data, 1.0, 0.02)
-        nn.init.constant_(self.bn.bias.data, 0)
-        return
 
     def forward(self, x):
-        x = self.conv(x)
-        x = self.bn(x)
-        x = self.act(x)
-        return x
+        return self.act(self.bn(self.conv(x)))
 
 
 class UpSample(nn.Module):
 
-    def __init__(self, channels, upsample_type="TransposeConv"):
+    def __init__(self, channels, stride=2, kernel=5):
         super(UpSample, self).__init__()
-        self.upsample_type = upsample_type
-        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
-        self.transpose_conv = nn.ConvTranspose2d(in_channels=channels[0], out_channels=channels[1], kernel_size=4,
-                                                 stride=2, padding=1, bias=False)
-        self.conv = nn.Conv2d(in_channels=channels[0], out_channels=channels[1], kernel_size=5, stride=1, padding=2,
-                              bias=False)
-        self.act = nn.ReLU()
-        self.bn = nn.BatchNorm2d(channels[1])
-        nn.init.normal_(self.transpose_conv.weight.data, 0.0, 0.02)
-        nn.init.normal_(self.conv.weight.data, 0.0, 0.02)
-        nn.init.normal_(self.bn.weight.data, 1.0, 0.02)
-        nn.init.constant_(self.bn.bias.data, 0)
-        return
+        assert len(channels) == 2
+        in_channel, out_channel = channels
+        self.upsample = nn.ConvTranspose2d(in_channels=in_channel,
+                                           out_channels=out_channel,
+                                           kernel_size=kernel,
+                                           stride=stride,
+                                           padding=0,
+                                           bias=False)
+        self.bn = nn.BatchNorm2d(out_channel)
+        self.act = nn.LeakyReLU(negative_slope=0.2)
 
     def forward(self, x):
-        if self.upsample_type == "TransposeConv":
-            x = self.transpose_conv(x)
-            x = self.bn(x)
-            x = self.act(x)
-        elif self.upsample_type == "Resample":
-            x = self.conv(x)
-            x = self.upsample(x)
-            x = self.bn(x)
-            x = self.act(x)
-        else:
-            raise RuntimeError("Unexpected upsample type")
-        return x
+        in_shape = x.shape
+        target_ysz, target_xsz = 2 * in_shape[2], 2 * in_shape[3]
+        x = self.act(self.bn(self.upsample(x)))
+        offset_x, offset_y = (x.shape[3] - target_xsz) // 2, (x.shape[2] - target_ysz) // 2
+        return x[:, :, offset_y:offset_y+target_ysz, offset_x:offset_x+target_xsz]
