@@ -11,7 +11,7 @@ from dataset.faces_dataset import make_dataloader
 from torch.optim import Adam, SGD
 from dataset.utils import decode_img, array_yxc2cyx
 from dataset.faces_dataset import FacesDataset, DEFAULT_RGB_MEAN, DEFAULT_RGB_STD, AddGaussianNoise
-from utils import get_readable_timestamp, get_total_elements_cnt
+from utils import get_readable_timestamp, get_total_elements_cnt, GrayToRgb
 from loss import discriminator_loss, generator_loss
 
 
@@ -22,7 +22,7 @@ def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr
     with tqdm(total=len(train_loader) * train_loader.batch_size,
               desc=f'Epoch {epoch_id + 1}',
               unit='image') as pbar:
-        for batch_idx, real_imgs in enumerate(train_loader):
+        for batch_idx, (real_imgs, labels) in enumerate(train_loader):
 
             optimizer_discr.zero_grad()
             optimizer_gen.zero_grad()
@@ -146,7 +146,7 @@ def parse_args():
     parser.add_argument("--noise-std", type=float, default=None,
                         help="Gaussian noise std")
     parser.add_argument("--dataset", type=str,
-                        default="/home/igor/datasets/img_celeba/img_align_celeba/small",
+                        default="mnist",
                         help="Abs path to dataset")
     args = parser.parse_args()
     return args
@@ -165,12 +165,25 @@ def main():
     if args.pretrained_disc:
         discriminator.load_state_dict(torch.load(args.pretrained_disc))
 
+    train_dloader = None
     transform = None
     if (args.noise_mean is not None) and (args.noise_std is not None):
         transform = AddGaussianNoise(mean=args.noise_mean, std=args.noise_std)
-    dataset = FacesDataset(args.dataset, target_size=(64, 64),
-                           mean=DEFAULT_RGB_MEAN, std=DEFAULT_RGB_STD, transform=transform)
-    train_dloader = make_dataloader(dataset, batch_size=args.batch_train, shuffle_dataset=True)
+    if args.dataset == "mnist":
+        train_dloader = torch.utils.data.DataLoader(
+            torchvision.datasets.MNIST('/home/igor/datasets/mnist/', train=True, download=True,
+                                       transform=torchvision.transforms.Compose([
+                                           torchvision.transforms.ToTensor(),
+                                           torchvision.transforms.Resize(size=(64, 64)),
+                                           torchvision.transforms.Normalize(
+                                               mean=(0.5,), std=(0.5,)),
+                                           GrayToRgb(),
+                                       ])),
+            batch_size=args.batch_train, shuffle=True)
+    else:
+        dataset = FacesDataset(args.dataset, target_size=(64, 64),
+                               mean=DEFAULT_RGB_MEAN, std=DEFAULT_RGB_STD, transform=transform)
+        train_dloader = make_dataloader(dataset, batch_size=args.batch_train, shuffle_dataset=True)
 
     optimizer_gen = None
     if args.optimizer == "adam":
