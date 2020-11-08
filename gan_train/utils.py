@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 import copy
+import numpy as np
 
 
-def d_loop(generator, discriminator, d_optimizer, real_batch, fake_descriptors, cuda=False):
+def d_loop(generator, discriminator, d_optimizer, real_batch, cuda=False):
     criterion = nn.BCELoss()
     # 1. Train D on real+fake
     d_optimizer.zero_grad()
@@ -19,7 +20,7 @@ def d_loop(generator, discriminator, d_optimizer, real_batch, fake_descriptors, 
     d_real_error = criterion(d_real_decision, target)  # ones = true
 
     #  1B: Train D on fake
-    d_gen_input = fake_descriptors
+    d_gen_input = torch.from_numpy(random_feature_vector(batch_size=len(real_batch), vector_length=100))
     if cuda:
         d_gen_input = d_gen_input.cuda()
 
@@ -37,7 +38,7 @@ def d_loop(generator, discriminator, d_optimizer, real_batch, fake_descriptors, 
     return d_real_error.cpu().item(), d_fake_error.cpu().item()
 
 
-def d_unrolled_loop(generator, discriminator, d_optimizer, real_batch, fake_descriptors, cuda=False):
+def d_unrolled_loop(generator, discriminator, d_optimizer, real_batch, fake_descriptors=None, cuda=False):
     criterion = nn.BCELoss()
     # 1. Train D on real+fake
     d_optimizer.zero_grad()
@@ -53,6 +54,8 @@ def d_unrolled_loop(generator, discriminator, d_optimizer, real_batch, fake_desc
     d_real_error = criterion(d_real_decision, target)  # ones = true
 
     #  1B: Train D on fake
+    if fake_descriptors is None:
+        fake_descriptors = torch.from_numpy(random_feature_vector(len(real_batch), 100))
     if cuda:
         fake_descriptors = fake_descriptors.cuda()
 
@@ -70,12 +73,12 @@ def d_unrolled_loop(generator, discriminator, d_optimizer, real_batch, fake_desc
     return d_real_error.cpu().item(), d_fake_error.cpu().item()
 
 
-def g_loop(generator, discriminator, g_optimizer, d_optimizer, real_batch, fake_descriptors, cuda=False, unrolled_steps=10):
+def g_loop(generator, discriminator, g_optimizer, d_optimizer, real_batch, cuda=False, unrolled_steps=10):
     criterion = nn.BCELoss()
     # 2. Train G on D's response (but DO NOT train D on these labels)
     g_optimizer.zero_grad()
 
-    gen_input = fake_descriptors
+    gen_input = torch.from_numpy(random_feature_vector(len(real_batch), 100))
     if cuda:
         gen_input = gen_input.cuda()
 
@@ -99,10 +102,14 @@ def g_loop(generator, discriminator, g_optimizer, d_optimizer, real_batch, fake_
     return g_error.cpu().item()
 
 
-def g_sample(generator, fake_descriptors, cuda=False):
+def g_sample(generator, batch_size=32, cuda=False):
     with torch.no_grad():
-        gen_input = fake_descriptors
+        gen_input = torch.from_numpy(random_feature_vector(batch_size, 100))
         if cuda:
             gen_input = gen_input.cuda()
         g_fake_data = generator(gen_input)
         return g_fake_data.cpu().numpy()
+
+
+def random_feature_vector(batch_size, vector_length):
+    return np.random.normal(size=[batch_size, vector_length]).astype('float32')

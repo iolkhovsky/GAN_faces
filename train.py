@@ -12,9 +12,8 @@ from dataset.faces_dataset import make_dataloader
 from torch.optim import Adam, SGD
 from dataset.utils import decode_img, array_yxc2cyx
 from dataset.faces_dataset import FacesDataset, DEFAULT_RGB_MEAN, DEFAULT_RGB_STD, AddGaussianNoise
-from utils import get_readable_timestamp, get_total_elements_cnt, GrayToRgb
-from loss import discriminator_loss, generator_loss
-from gan_train.utils import d_loop, d_unrolled_loop, g_loop, g_sample
+from utils import get_readable_timestamp, GrayToRgb
+from gan_train.utils import d_loop, g_loop, g_sample, random_feature_vector
 
 
 def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr, epoch_id=0,
@@ -25,12 +24,12 @@ def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr
               desc=f'Epoch {epoch_id + 1}',
               unit='image') as pbar:
         for batch_idx, (real_imgs, labels) in enumerate(train_loader):
-            random_descriptors = torch.rand(real_imgs.size(0), 100, device=device)
+            random_descriptors = torch.randn(real_imgs.size(0), 100, device=device)
 
             d_infos = []
             for d_index in range(d_steps):
                 d_info = d_loop(generator=generator, discriminator=discriminator, d_optimizer=optimizer_discr,
-                                real_batch=real_imgs, fake_descriptors=random_descriptors, cuda=device == "cuda")
+                                real_batch=real_imgs, cuda=device == "cuda")
                 d_infos.append(d_info)
             d_infos = np.mean(d_infos, 0)
             d_real_loss, d_fake_loss = d_infos
@@ -38,8 +37,7 @@ def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr
             g_infos = []
             for g_index in range(g_steps):
                 g_info = g_loop(generator=generator, discriminator=discriminator, g_optimizer=optimizer_gen,
-                                d_optimizer=optimizer_discr, real_batch=real_imgs, fake_descriptors=random_descriptors,
-                                cuda=device == "cuda")
+                                d_optimizer=optimizer_discr, real_batch=real_imgs, cuda=device == "cuda")
                 g_infos.append(g_info)
             g_infos = np.mean(g_infos)
             g_loss = g_infos
@@ -58,8 +56,7 @@ def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr
             if valid_period:
                 if (batch_idx + 1) % valid_period == 0:
                     with torch.no_grad():
-                        fake_imgs = g_sample(generator=generator, fake_descriptors=random_descriptors,
-                                             cuda=device == "cuda")
+                        fake_imgs = g_sample(generator=generator, cuda=device == "cuda")
                         gen_imgs = []
                         for i, img in enumerate(fake_imgs):
                             img = decode_img(img)
