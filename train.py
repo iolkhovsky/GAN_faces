@@ -56,7 +56,7 @@ def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr
             if valid_period:
                 if (batch_idx + 1) % valid_period == 0:
                     with torch.no_grad():
-                        fake_imgs = g_sample(generator=generator, cuda=device == "cuda")
+                        fake_imgs = g_sample(generator=generator, batch_size=len(real_imgs), cuda=device == "cuda")
                         gen_imgs = []
                         for i, img in enumerate(fake_imgs):
                             img = decode_img(img)
