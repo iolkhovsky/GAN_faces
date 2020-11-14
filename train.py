@@ -6,8 +6,8 @@ import argparse
 from tqdm import tqdm
 import numpy as np
 
-from models.discriminator import FaceDiscriminator
-from models.generator import FaceGenerator
+from models.discriminator import ImageDiscriminator
+from models.generator import ImageGenerator
 from dataset.faces_dataset import make_dataloader
 from torch.optim import Adam, SGD
 from dataset.utils import decode_img, array_yxc2cyx
@@ -16,15 +16,15 @@ from utils import get_readable_timestamp, GrayToRgb
 from gan_train.utils import d_loop, g_loop, g_sample, random_feature_vector
 
 
-def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr, epoch_id=0,
-          g_steps=1, d_steps=1, scheduler=None, device="cpu", autosave_period=None, valid_period=None,
+def train(generator, discriminator, train_loader, data_is_labeled, optimizer_gen, optimizer_discr, epoch_id=0,
+          g_steps=1, d_steps=1, device="cpu", autosave_period=None, valid_period=None,
           tb_writer=None, transform=None):
 
     with tqdm(total=len(train_loader) * train_loader.batch_size,
               desc=f'Epoch {epoch_id + 1}',
               unit='image') as pbar:
-        for batch_idx, (real_imgs, labels) in enumerate(train_loader):
-            random_descriptors = torch.randn(real_imgs.size(0), 100, device=device)
+        for batch_idx, batch_data in enumerate(train_loader):
+            real_imgs = batch_data[0] if data_is_labeled else batch_data
 
             d_infos = []
             for d_index in range(d_steps):
@@ -32,15 +32,15 @@ def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr
                                 real_batch=real_imgs, cuda=device == "cuda")
                 d_infos.append(d_info)
             d_infos = np.mean(d_infos, 0)
-            d_real_loss, d_fake_loss = d_infos
+            d_real_loss, d_fake_loss, d_real_accuracy, d_fake_accuracy = d_infos
 
             g_infos = []
             for g_index in range(g_steps):
                 g_info = g_loop(generator=generator, discriminator=discriminator, g_optimizer=optimizer_gen,
                                 d_optimizer=optimizer_discr, real_batch=real_imgs, cuda=device == "cuda")
                 g_infos.append(g_info)
-            g_infos = np.mean(g_infos)
-            g_loss = g_infos
+            g_infos = np.mean(g_infos, 0)
+            g_loss, g_accuracy = g_infos
 
             global_step = epoch_id * len(train_loader) + batch_idx
             if tb_writer:
@@ -49,9 +49,9 @@ def train(generator, discriminator, train_loader, optimizer_gen, optimizer_discr
                 tb_writer.add_scalar("Loss/DiscriminatorReal", d_real_loss, global_step)
                 tb_writer.add_scalar("Loss/Generator", g_loss, global_step)
                 tb_writer.add_scalar("Loss/Total", g_loss + d_fake_loss + d_real_loss, global_step)
-                #tb_writer.add_scalar("Accuracy/DiscrReal", discr_real_accuracy.item(), global_step)
-                #tb_writer.add_scalar("Accuracy/DiscrFake", disc_fake_accuracy.item(), global_step)
-                #tb_writer.add_scalar("Accuracy/GenFake", 1. - disc_fake_accuracy.item(), global_step)
+                tb_writer.add_scalar("Accuracy/DiscrReal", d_real_accuracy, global_step)
+                tb_writer.add_scalar("Accuracy/DiscrFake", d_fake_accuracy, global_step)
+                tb_writer.add_scalar("Accuracy/GenFake", g_accuracy, global_step)
 
             if valid_period:
                 if (batch_idx + 1) % valid_period == 0:
@@ -133,21 +133,31 @@ def parse_args():
     return args
 
 
+def get_optimizer(optim, model, lr, l2):
+    if optim == "adam":
+        return Adam(model.parameters(), lr=lr, betas=(0.5, 0.999), weight_decay=l2)
+    elif optim == "sgd":
+        return SGD(model.parameters(), lr=lr, weight_decay=l2)
+    else:
+        return None
+
+
 def main():
     args = parse_args()
 
-    generator = FaceGenerator()
+    generator = ImageGenerator()
     generator = generator.to(args.device)
     if args.pretrained_gen:
         generator.load_state_dict(torch.load(args.pretrained_gen))
 
-    discriminator = FaceDiscriminator()
+    discriminator = ImageDiscriminator()
     discriminator = discriminator.to(args.device)
     if args.pretrained_disc:
         discriminator.load_state_dict(torch.load(args.pretrained_disc))
 
     train_dloader = None
     transform = None
+    data_is_labeled = False
     if (args.noise_mean is not None) and (args.noise_std is not None):
         transform = AddGaussianNoise(mean=args.noise_mean, std=args.noise_std)
     if args.dataset == "mnist":
@@ -161,36 +171,20 @@ def main():
                                            GrayToRgb(),
                                        ])),
             batch_size=args.batch_train, shuffle=True)
+        data_is_labeled = True
     else:
         dataset = FacesDataset(args.dataset, target_size=(64, 64),
                                mean=DEFAULT_RGB_MEAN, std=DEFAULT_RGB_STD, transform=transform)
         train_dloader = make_dataloader(dataset, batch_size=args.batch_train, shuffle_dataset=True)
 
-    optimizer_gen = None
-    if args.optimizer == "adam":
-        optimizer_gen = Adam(generator.parameters(), lr=args.learning_rate, betas=(0.5, 0.999),
-                         weight_decay=args.l2)
-    elif args.optimizer == "sgd":
-        optimizer_gen = SGD(generator.parameters(), lr=args.learning_rate,
-                        weight_decay=args.l2)
-
-    optimizer_discr = None
-    if args.optimizer == "adam":
-        optimizer_discr = Adam(discriminator.parameters(), lr=args.learning_rate, betas=(0.5, 0.999),
-                         weight_decay=args.l2)
-    elif args.optimizer == "sgd":
-        optimizer_discr = SGD(discriminator.parameters(), lr=args.learning_rate,
-                        weight_decay=args.l2)
-
-    scheduler = None
-
+    optimizer_gen = get_optimizer(args.optimizer, generator, lr=args.learning_rate, l2=args.l2)
+    optimizer_discr = get_optimizer(args.optimizer, discriminator, lr=args.learning_rate, l2=args.l2)
     tboard_writer = SummaryWriter()
 
     try:
         for e in range(args.epochs):
-            train(generator, discriminator, train_dloader, optimizer_gen, optimizer_discr, e, scheduler=scheduler,
-                  device=args.device, autosave_period=None, valid_period=args.valid_period, tb_writer=tboard_writer,
-                  transform=transform)
+            train(generator, discriminator, train_dloader, data_is_labeled, optimizer_gen, optimizer_discr, e, device=args.device,
+                  autosave_period=None, valid_period=args.valid_period, tb_writer=tboard_writer, transform=transform)
         model_name = "pretrained_models/" + str(generator) + "_completed_" + get_readable_timestamp() + ".pt"
         torch.save(generator.state_dict(), model_name)
         print("Training completed. Final model " + model_name + " has been saved")

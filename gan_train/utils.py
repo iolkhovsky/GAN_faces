@@ -35,7 +35,11 @@ def d_loop(generator, discriminator, d_optimizer, real_batch, cuda=False):
     d_loss = d_real_error + d_fake_error
     d_loss.backward()
     d_optimizer.step()  # Only optimizes D's parameters; changes based on stored gradients from backward()
-    return d_real_error.cpu().item(), d_fake_error.cpu().item()
+
+    d_real_accuracy = torch.sum(d_real_decision > 0.5) / len(d_real_decision)
+    d_fake_accuracy = torch.sum(d_real_decision <= 0.5) / len(d_fake_decision)
+    return d_real_error.cpu().item(), d_fake_error.cpu().item(), d_real_accuracy.cpu().item(), \
+           d_fake_accuracy.cpu().item()
 
 
 def d_unrolled_loop(generator, discriminator, d_optimizer, real_batch, fake_descriptors=None, cuda=False):
@@ -99,7 +103,9 @@ def g_loop(generator, discriminator, g_optimizer, d_optimizer, real_batch, cuda=
     if unrolled_steps > 0:
         discriminator.load(backup)
         del backup
-    return g_error.cpu().item()
+
+    g_accuracy = torch.sum(dg_fake_decision < 0.5) / len(dg_fake_decision)
+    return g_error.cpu().item(), g_accuracy.cpu().item()
 
 
 def g_sample(generator, batch_size=32, cuda=False):

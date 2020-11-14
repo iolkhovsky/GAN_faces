@@ -4,10 +4,10 @@ from models.layers import UpSample
 import unittest
 
 
-class FaceGenerator(nn.Module):
+class ImageGenerator(nn.Module):
 
     def __init__(self, feature_vector=100):
-        super(FaceGenerator, self).__init__()
+        super(ImageGenerator, self).__init__()
         self.fc = nn.Linear(feature_vector, 4 * 4 * 512, bias=False)
         self.bn_fc = nn.BatchNorm1d(4 * 4 * 512)
         self.act_lrelu = nn.LeakyReLU(negative_slope=0.2)
@@ -38,14 +38,14 @@ class TestGenerator(unittest.TestCase):
 
     def test_forward(self):
         batch_sz = 2
-        model = FaceGenerator()
+        model = ImageGenerator()
         test_in = torch.rand(batch_sz, 100)
         net_out = model.forward(test_in)
         self.assertEqual(net_out.shape, (batch_sz, 3, 64, 64))
 
     def test_backward(self):
         batch_sz = 2
-        model = FaceGenerator()
+        model = ImageGenerator()
         test_in = torch.rand(batch_sz, 100)
         net_out = model.forward(test_in)
         test_out = torch.rand(batch_sz, 3, 64, 64)

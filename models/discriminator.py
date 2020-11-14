@@ -45,10 +45,10 @@ class Classifier(nn.Module):
         return x
 
 
-class FaceDiscriminator(nn.Module):
+class ImageDiscriminator(nn.Module):
 
     def __init__(self):
-        super(FaceDiscriminator, self).__init__()
+        super(ImageDiscriminator, self).__init__()
         self.fext = FeatureExtractor()
         self.clf = Classifier()
 
@@ -70,14 +70,14 @@ class TestDescriminator(unittest.TestCase):
 
     def test_forward_pass(self):
         batch_sz = 2
-        model = FaceDiscriminator()
+        model = ImageDiscriminator()
         test_in = torch.rand(batch_sz, 3, 64, 64)
         net_out = model.forward(test_in)
         self.assertEqual(net_out.shape, (batch_sz, 1))
 
     def test_back_prop(self):
         batch_sz = 2
-        model = FaceDiscriminator()
+        model = ImageDiscriminator()
 
         test_in = torch.rand(batch_sz, 3, 64, 64)
         out = model.forward(test_in)
