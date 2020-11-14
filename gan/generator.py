@@ -31,7 +31,7 @@ class ImageGenerator(nn.Module):
         return x[:, :, 1:1+64, 1:1+64]
 
     def __str__(self):
-        return "FaceGenerator"
+        return "ImageGenerator"
 
 
 class TestGenerator(unittest.TestCase):

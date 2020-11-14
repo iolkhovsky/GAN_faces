@@ -1,5 +1,14 @@
 import datetime
 import torch
+from os.path import isdir
+from shutil import rmtree
+from os import makedirs
+
+
+def force_create_dir(path):
+    if isdir(path):
+        rmtree(path)
+    makedirs(path)
 
 
 def get_readable_timestamp():
