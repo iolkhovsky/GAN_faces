@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
-from models.layers import ConvX1
+from gan.layers import ConvX1
 import unittest
-import numpy as np
 
 
 class FeatureExtractor(nn.Module):

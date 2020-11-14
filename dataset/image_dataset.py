@@ -3,41 +3,25 @@ from glob import glob
 import cv2
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, SubsetRandomSampler
+from torch.utils.data import DataLoader
 
-from dataset.utils import encode_img, decode_img, array_yxc2cyx, array_cyx2yxc
+from dataset.utils import encode_img
 
 
-DEFAULT_DSET_PATH = "/home/igor/datasets/faces"
 DEFAULT_TARGET_SIZE = (64, 64)
-DEFAULT_RGB_MEAN = (0.534812022950395, 0.4143179997187508, 0.3528174872495447)
-DEFAULT_RGB_STD = (0.29074517717464865, 0.2538011731959151, 0.2433702573454103)
 
 
-class FacesDataset:
+class ImageDataset:
 
-    def make_tensor(self, path_to_image):
-        image = cv2.imread(path_to_image)
-        resize_image = (image.shape[1], image.shape[0]) != self.output_size
-        if resize_image:
-            image = cv2.resize(image, self.output_size)
-        return encode_img(image)
-
-    def __init__(self, root=DEFAULT_DSET_PATH, target_size=DEFAULT_TARGET_SIZE,
-                 mean=(0.5, 0.5, 0.5), std=(1.0, 1.0, 1.0), transform=None):
+    def __init__(self, root, target_size=DEFAULT_TARGET_SIZE, transform=None, hint=""):
         assert isdir(root)
-
         self.root = root
         self.output_size = target_size
         self.sample_ptr = 0
-        self.mean = mean
-        self.std = std
         self.transform = transform
-
         self.img_paths = glob(join(root, "*.jpg"))
-
         self.imgs = list(map(self.make_tensor, self.img_paths))
-        return
+        self.dataset_hint = hint
 
     def __len__(self):
         return len(self.imgs)
@@ -66,7 +50,14 @@ class FacesDataset:
             raise StopIteration
 
     def __str__(self):
-        return "AlignedFaces6k"
+        return f"ImageDataset{self.dataset_hint}"
+
+    def make_tensor(self, path_to_image):
+        image = cv2.imread(path_to_image)
+        resize_image = (image.shape[1], image.shape[0]) != self.output_size
+        if resize_image:
+            image = cv2.resize(image, self.output_size)
+        return encode_img(image)
 
 
 class AddGaussianNoise(object):
@@ -85,33 +76,14 @@ class AddGaussianNoise(object):
         return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
 
 
-def make_dataloader(dataset, batch_size=1, shuffle_dataset=True):
+def make_dataloader(dset, batch_size=1, shuffle_dataset=True):
     random_seed = 42
 
-    dataset_size = len(dataset)
+    dataset_size = len(dset)
     indices = list(range(dataset_size))
     if shuffle_dataset:
         np.random.seed(random_seed)
         np.random.shuffle(indices)
 
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=batch_size)
+    dataloader = torch.utils.data.DataLoader(dset, batch_size=batch_size)
     return dataloader
-
-
-if __name__ == "__main__":
-    dataset = FacesDataset("/home/igor/datasets/faces6k/small", target_size=(64, 64),
-                           mean=DEFAULT_RGB_MEAN, std=DEFAULT_RGB_STD)
-    train_dloader = make_dataloader(dataset, 10, True)
-    print("Dataset size", len(dataset))
-    print("Train", len(train_dloader))
-
-    iterator = iter(train_dloader)
-    batch = next(iterator)
-    print("Sample shape: ", batch.shape)
-    print("Sample dtype: ", type(batch.dtype))
-
-    for idx, img in enumerate(batch):
-        denorm = decode_img(img.numpy().copy(), mean=DEFAULT_RGB_MEAN, std=DEFAULT_RGB_STD)
-        cv2.imwrite("/home/igor/temp/temp"+str(idx)+".jpg", denorm)
-    print("Saved")
-

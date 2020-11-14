@@ -1,19 +1,18 @@
+import argparse
 import cv2
+import numpy as np
 import torch
+from torch.optim import Adam, SGD
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
-import argparse
 from tqdm import tqdm
-import numpy as np
 
-from models.discriminator import ImageDiscriminator
-from models.generator import ImageGenerator
-from dataset.faces_dataset import make_dataloader
-from torch.optim import Adam, SGD
+from gan.utils import d_loop, g_loop, g_sample
+from dataset.image_dataset import AddGaussianNoise, ImageDataset, make_dataloader
 from dataset.utils import decode_img, array_yxc2cyx
-from dataset.faces_dataset import FacesDataset, DEFAULT_RGB_MEAN, DEFAULT_RGB_STD, AddGaussianNoise
+from gan.generator import ImageGenerator
+from gan.discriminator import ImageDiscriminator
 from utils import get_readable_timestamp, GrayToRgb
-from gan_train.utils import d_loop, g_loop, g_sample, random_feature_vector
 
 
 def train(generator, discriminator, train_loader, data_is_labeled, optimizer_gen, optimizer_discr, epoch_id=0,
@@ -91,7 +90,6 @@ def train(generator, discriminator, train_loader, data_is_labeled, optimizer_gen
                     print(model_name, " has been saved")
 
             pbar.update(train_loader.batch_size)
-    return
 
 
 def parse_args():
@@ -129,8 +127,7 @@ def parse_args():
     parser.add_argument("--dataset", type=str,
                         default="mnist",
                         help="Abs path to dataset")
-    args = parser.parse_args()
-    return args
+    return parser.parse_args()
 
 
 def get_optimizer(optim, model, lr, l2):
@@ -142,22 +139,22 @@ def get_optimizer(optim, model, lr, l2):
         return None
 
 
-def main():
+if __name__ == "__main__":
     args = parse_args()
 
-    generator = ImageGenerator()
-    generator = generator.to(args.device)
+    gen_model = ImageGenerator()
+    gen_model = gen_model.to(args.device)
     if args.pretrained_gen:
-        generator.load_state_dict(torch.load(args.pretrained_gen))
+        gen_model.load_state_dict(torch.load(args.pretrained_gen))
 
-    discriminator = ImageDiscriminator()
-    discriminator = discriminator.to(args.device)
+    discr_model = ImageDiscriminator()
+    discr_model = discr_model.to(args.device)
     if args.pretrained_disc:
-        discriminator.load_state_dict(torch.load(args.pretrained_disc))
+        discr_model.load_state_dict(torch.load(args.pretrained_disc))
 
     train_dloader = None
     transform = None
-    data_is_labeled = False
+    dset_is_labeled = False
     if (args.noise_mean is not None) and (args.noise_std is not None):
         transform = AddGaussianNoise(mean=args.noise_mean, std=args.noise_std)
     if args.dataset == "mnist":
@@ -171,35 +168,30 @@ def main():
                                            GrayToRgb(),
                                        ])),
             batch_size=args.batch_train, shuffle=True)
-        data_is_labeled = True
+        dset_is_labeled = True
     else:
-        dataset = FacesDataset(args.dataset, target_size=(64, 64),
-                               mean=DEFAULT_RGB_MEAN, std=DEFAULT_RGB_STD, transform=transform)
+        dataset = ImageDataset(args.dataset, target_size=(64, 64), transform=transform)
         train_dloader = make_dataloader(dataset, batch_size=args.batch_train, shuffle_dataset=True)
 
-    optimizer_gen = get_optimizer(args.optimizer, generator, lr=args.learning_rate, l2=args.l2)
-    optimizer_discr = get_optimizer(args.optimizer, discriminator, lr=args.learning_rate, l2=args.l2)
+    optimizer_g = get_optimizer(args.optimizer, gen_model, lr=args.learning_rate, l2=args.l2)
+    optimizer_d = get_optimizer(args.optimizer, discr_model, lr=args.learning_rate, l2=args.l2)
     tboard_writer = SummaryWriter()
 
     try:
         for e in range(args.epochs):
-            train(generator, discriminator, train_dloader, data_is_labeled, optimizer_gen, optimizer_discr, e, device=args.device,
-                  autosave_period=None, valid_period=args.valid_period, tb_writer=tboard_writer, transform=transform)
-        model_name = "pretrained_models/" + str(generator) + "_completed_" + get_readable_timestamp() + ".pt"
-        torch.save(generator.state_dict(), model_name)
+            train(gen_model, discr_model, train_dloader, dset_is_labeled, optimizer_g, optimizer_d, e,
+                  device=args.device, autosave_period=None, valid_period=args.valid_period, tb_writer=tboard_writer,
+                  transform=transform)
+        model_name = "pretrained_models/" + str(gen_model) + "_completed_" + get_readable_timestamp() + ".pt"
+        torch.save(gen_model.state_dict(), model_name)
         print("Training completed. Final model " + model_name + " has been saved")
-        model_name = "pretrained_models/" + str(discriminator) + "_completed_" + get_readable_timestamp() + ".pt"
-        torch.save(discriminator.state_dict(), model_name)
+        model_name = "pretrained_models/" + str(discr_model) + "_completed_" + get_readable_timestamp() + ".pt"
+        torch.save(discr_model.state_dict(), model_name)
         print("Training completed. Final model " + model_name + " has been saved")
     except KeyboardInterrupt:
-        model_name = "pretrained_models/" + str(generator) + "_completed_" + get_readable_timestamp() + ".pt"
-        torch.save(generator.state_dict(), model_name)
+        model_name = "pretrained_models/" + str(gen_model) + "_completed_" + get_readable_timestamp() + ".pt"
+        torch.save(gen_model.state_dict(), model_name)
         print("Training completed. Final model " + model_name + " has been saved")
-        model_name = "pretrained_models/" + str(discriminator) + "_completed_" + get_readable_timestamp() + ".pt"
-        torch.save(discriminator.state_dict(), model_name)
+        model_name = "pretrained_models/" + str(discr_model) + "_completed_" + get_readable_timestamp() + ".pt"
+        torch.save(discr_model.state_dict(), model_name)
         print("Training completed. Final model " + model_name + " has been saved")
-    return
-
-
-if __name__ == "__main__":
-    main()
